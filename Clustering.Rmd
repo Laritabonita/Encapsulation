@@ -1,0 +1,103 @@
+---
+title: "Clustering"
+From: https://www.nature.com/articles/s41467-021-25607-2
+---
+
+```{r}
+### Required packages ###
+
+# install.packages("BiocManager") v1.30.1
+#install.packages("devtools") v2.3.2
+#install.packages('Seurat') v3.2.2.99
+#BiocManager::install("scran") v1.14.6
+#BiocManager::install("scater") v1.14.6
+#BiocManager::install("MAST") v1.12.0
+#BiocManager::install("SingleCellExperiment") v1.8.0
+
+###Load required packages##
+# For prepocessing, replicate integration and clustering analysis
+library(Seurat)
+library(scran)
+library(scater)
+library(ggplot2)
+library(RColorBrewer)
+library(MAST)
+library(SingleCellExperiment)
+library(ggpubr)
+library(clustree)
+
+```
+
+```{r}
+Sample_01 <- CreateSeuratObject(merge_filt, project = "merge")
+
+## Normalise and log transform data with SCRAN ##
+Sample_01 <- as.SingleCellExperiment(merge_filt)
+
+# Pre-cluster cells. Factors are first generated within clusters then rescaled to normalize between clusters
+qclust_sample_001 <- scran::quickCluster(Sample_01, min.size = 30)
+
+# Compute size factors - removes low abundance genes
+Sample_01 <- scran::computeSumFactors(Sample_01, clusters = qclust_sample_001)
+Sample_01 <- scater::logNormCounts(Sample_01)
+
+## Convert back to Seurat object 
+Sample1 <- as.Seurat(Sample_01, counts = "counts", data = "logcounts")
+```
+
+```{r}
+## Select variable genes with two methods, scran and seurat
+## Detect variable genes and remove VSG for variable gene list
+# find varible genes with scran
+Sampledec_01 <- modelGeneVar(Sample_01)
+top.hvgsSample <- getTopHVGs(Sampledec_01, n=3000)
+
+## variable genes with seurat
+Sample.features <- FindVariableFeatures(Sample1, selection.method = "vst", nfeatures = 3000, assay = "RNA") 
+
+top3000_Sample <- head(VariableFeatures(Sample.features), 3000)
+
+## Find those in common
+common_var_genes_Sample <- intersect(top.hvgsSample, top3000_Sample)
+
+# Add variable genes to objects
+Sample1@assays[["RNA"]]@var.features <- common_var_genes_Sample 
+
+head(var_genes_Sample)
+
+# Scale the data and regress variable due to total RNA. This can take some time
+all.genes.Sample <- rownames(x = Sample1)
+Sample1 <- ScaleData(Sample1, vars.to.regress = "nCount_RNA", features = all.genes.Sample)
+```
+
+
+```{r}
+## Clustering analysis
+
+Sample1 <- FindNeighbors(SamplePCA, dims = 1:8, k.param = 30, nn.method = "annoy", annoy.metric = "euclidean")
+
+## Run cluster to see results of different clustering resolutions
+Sampleclustree <- FindClusters(Sample1, resolution = c(0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1))
+
+```
+
+```{r}
+# Rerun clustering with selected resolution parameter (selected 0.4 based on clustree results and several iterations)
+Sample1 <- FindClusters(Sample1, resolution = 0.2)
+
+```
+
+```{r}
+# Run UMAP with same number of dims as for FindNeighbors
+mergeUMAP <- RunUMAP(Sample1, dims = 1:8, min.dist = 0.1)
+
+```
+
+
+```{r}
+# Plot cells by orig.ident, and stumpy/slender clusters
+DefaultAssay(mergeUMAP) <- "RNA"
+DimPlot(mergeUMAP, pt.size = 1) 
+DimPlot(mergeUMAP, pt.size = 1, group.by = "orig.ident") 
+FeaturePlot(mergeUMAP, features = c("Tb927.7.5940", "Tb927.7.2660", "Tb927.10.14140", "VSG-AnTat"))
+```

@@ -1,0 +1,74 @@
+---
+title: "QualityControlscRNAseq"
+From: https://www.nature.com/articles/s41467-021-25607-2
+---
+
+This script was used to remove poor quality transcriptomes, as doublets and background in three samples at the same time: Fat, Blood and Culture.
+
+
+```{r}
+# Load in data sets and generate seurat objects
+COLD1.data <- Read10X(data.dir = "Cold_1/filtered_feature_bc_matrix/")
+COLD1 <- CreateSeuratObject(counts = cbind(COLD1.data), project = "Cold1", min.cells = 5, min.features = 3)
+COLD2.data <- Read10X(data.dir = "Cold_2/filtered_feature_bc_matrix/")
+COLD2 <- CreateSeuratObject(counts = cbind(COLD2.data), project = "Cold2", min.cells = 5, min.features = 3)
+RT1.data <- Read10X(data.dir = "RT_1/filtered_feature_bc_matrix/")
+RT1 <- CreateSeuratObject(counts = cbind(RT1.data), project = "RT1", min.cells = 5, min.features = 3)
+RT2.data <- Read10X(data.dir = "RT_2/filtered_feature_bc_matrix/")
+RT2 <- CreateSeuratObject(counts = cbind(RT2.data), project = "RT2", min.cells = 5, min.features = 3)
+
+# Calculate % of transcripts from KDNA
+mt_marker_genes <- c("ND7", "COIII", "MURF4", "MURF1", "ND1", "MURF2", "COI", "COII", "ND4", "RPS12", "ND5", "Cyb")
+COLD1[["percent.MT"]] <- PercentageFeatureSet(COLD1, features = mt_marker_genes)
+COLD2[["percent.MT"]] <- PercentageFeatureSet(COLD2, features = mt_marker_genes)
+RT1[["percent.MT"]] <- PercentageFeatureSet(RT1, features = mt_marker_genes)
+RT2[["percent.MT"]] <- PercentageFeatureSet(RT2, features = mt_marker_genes)
+
+
+# Calculate % of transcripts from rRNA. The rRNA list of genes were taken from TriTrypDB and then checked manually to delete all genes no realted to rRNA.
+rRNA_RNA <- rRNA_RNA <- read.table("rRNA_list.txt", sep = "\t", header=FALSE)
+rRNA_RNA <- as.character(rRNA_RNA$V1)
+
+COLD1_genes <- COLD1@assays[["RNA"]]@layers[["counts"]]
+COLD1_genes <- c(COLD1_genes@Dimnames[[1]])
+COLD1_rRNA_genes <- subset(rRNA_RNA, rRNA_RNA %in% COLD1_genes)
+COLD1[["percent.rRNA"]] <- PercentageFeatureSet(COLD1, features = COLD1_rRNA_genes)
+
+COLD2_genes <- COLD2@assays[["RNA"]]@layers[["counts"]]
+COLD2_genes <- c(COLD2_genes@Dimnames[[1]])
+COLD2_rRNA_genes <- subset(rRNA_RNA, rRNA_RNA %in% COLD2_genes)
+COLD2[["percent.rRNA"]] <- PercentageFeatureSet(COLD2, features = COLD2_rRNA_genes)
+
+RT1_genes <- RT1@assays[["RNA"]]@layers[["counts"]]
+RT1_genes <- c(RT1_genes@Dimnames[[1]])
+RT1_rRNA_genes <- subset(rRNA_RNA, rRNA_RNA %in% RT1_genes)
+RT1[["percent.rRNA"]] <- PercentageFeatureSet(RT1, features = RT1_rRNA_genes)
+
+RT2_genes <- RT2@assays[["RNA"]]@layers[["counts"]]
+RT2_genes <- c(RT2_genes@Dimnames[[1]])
+RT2_rRNA_genes <- subset(rRNA_RNA, rRNA_RNA %in% RT2_genes)
+RT2[["percent.rRNA"]] <- PercentageFeatureSet(RT2, features = RT2_rRNA_genes)
+
+```
+df
+```{r}
+# Lets merge the four samples
+
+merge <- merge(COLD1, c(COLD2, RT1, RT2), add.cell.id = c("Cold1", "Cold2", "RT1", "RT2"))
+
+```
+
+```{r}
+# Filter the data
+merge_filt <- subset(merge, subset = nFeature_RNA > 800 & percent.MT < 2)
+```
+
+
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

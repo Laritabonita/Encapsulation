@@ -1,0 +1,58 @@
+---
+title: "ScoringCellType"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Make a list of genes related to slender/stumpy from EmmaBriggs data
+Culture <- readRDS("In_vitro_BSF_seurat_object.rds")
+Slender.markers <- FindMarkers(Culture, ident.1 = c(1), ident.2 = c(0), min.pct = 0.5, only.pos = TRUE)
+Stumpy.markers <- FindMarkers(Culture, ident.1 = c(0), ident.2 = c(1), min.pct = 0.5, only.pos = TRUE)
+
+# Extract the gene names from the row names of the data frame
+slender_genes_list <- rownames(Slender.markers)
+stumpy_genes_list <- rownames(Stumpy.markers)
+
+combined <- AddModuleScore(ALL_renamed, features = list(slender_genes_list, stumpy_genes_list), name = "form", assay = "RNA")
+
+combined$slender_score <- combined$form1
+combined$stumpy_score <- combined$form2
+
+# cluster_colours <- c("0" = "#F8766D", "1" = "#EBAD24", "2" = "#00BF7D", "3" = "#00B0F6", "4" = "#BA40F8")
+cluster_colours <- c("0" = "#F8766D", "1" = "#00BFC4")
+cluster_colours <- c("Early G1" = "#F8766D", "Late G1" = "#F8766D", "S" = "#F8766D", "G2M" = "#F8766D", "Stumpy" = "#00C19A")
+
+p <- VlnPlot(combined, features = "slender_score", cols = cluster_colours, pt.size = 0) +theme(axis.text.x = element_text(angle = 0, hjust = 0.5), axis.title.x = element_blank()) + guides(fill=FALSE)
+p[[1]]$layers[[1]]$aes_params$alpha = 0.7
+p
+
+p <- VlnPlot(combined, features = "stumpy_score", cols = cluster_colours, pt.size = 0) +theme(axis.text.x = element_text(angle = 0, hjust = 0.5), axis.title.x = element_blank()) + guides(fill=FALSE)
+p[[1]]$layers[[1]]$aes_params$alpha = 0.7
+p
+#pdf(file = "VLnPlot_stumpy_score.pdf", height = 2.8, width = 2.8)
+p
+#dev.off()
+```
+
+```{r setup, include=FALSE}
+gf
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

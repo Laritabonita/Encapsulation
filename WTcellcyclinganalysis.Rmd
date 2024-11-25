@@ -1,0 +1,180 @@
+---
+title: "Cell cycling analysis of bloodstream for trypanosoma brucei"
+From: https://www.nature.com/articles/s41467-021-25607-2
+---
+
+```{r}
+library(princurve)
+library(tradeSeq)
+library(cowplot)
+library(clusterExperiment)
+library(Seurat)
+library(ggplot2)
+library(RColorBrewer)
+library(dplyr)
+library(rlang)
+library(grid)
+library(ggridges)
+library(tidyverse)
+library(slingshot)
+library(ggridges)
+
+# Require bar height map function for one heatmap, provided seperately 
+
+# Plotting theme for graph asthetics
+UMAP_theme <- theme(axis.line=element_blank(), axis.ticks = element_blank(),  panel.background = element_rect(size=0.5,linetype="solid",color="black"), plot.title = element_text(size = 10, face = "bold", hjust = 0.05, vjust = -8), axis.text.x = element_blank(), axis.title.x = element_blank(), axis.title.y = element_blank(), axis.text.y =  element_blank(), legend.title = element_blank())
+
+```
+
+```{r}
+PrctCellExpringGene <- function(object, genes, group.by = "all"){
+  if(group.by == "all"){
+    prct = unlist(lapply(genes,calc_helper, object=object))
+    result = data.frame(Markers = genes, Cell_proportion = prct)
+    return(result)
+  }
+  
+  else{        
+    list = SplitObject(object, group.by)
+    factors = names(list)
+    
+    results = lapply(list, PrctCellExpringGene, genes=genes)
+    for(i in 1:length(factors)){
+      results[[i]]$Feature = factors[i]
+    }
+    combined = do.call("rbind", results)
+    return(combined)
+  }
+}
+
+calc_helper <- function(object,genes){
+  counts = object[['RNA']]@counts
+  ncells = ncol(counts)
+  if(genes %in% row.names(counts)){
+    sum(counts[genes,]>0)/ncells
+  }else{return(NA)}
+}
+```
+
+### part one ###
+
+```{r}
+## Assign cell cycle stage using marker genes
+
+Cell_cycle_regulated_genes <- read.delim("Cell_cycle_regulated_genes.txt")
+
+## Can use the provided integrated seurat object or output from script "WT_differentiation_scRNA-seq"
+load("Culture1")
+# Rename object 
+tryp <- mergeUMAP
+DimPlot(tryp)
+```
+
+
+```{r}
+# Get all the genes identified in the data set that are detected in at least 10% of the cells
+genes <- tryp@assays[["RNA"]]@data
+genes <- genes@Dimnames[[1]]
+cell_prct <- PrctCellExpringGene(tryp, genes = genes, group.by = "all")
+genes_10prct <- subset(cell_prct, subset = cell_prct$Cell_proportion > 0.1)
+genes_10 <- genes_10prct$Markers
+
+# Get list of marker genes present in at least 10% cells for each phase
+
+Cell_cycle_regulated_genes <- read.delim("Cell_cycle_regulated_genes.txt")
+
+s.genes <- subset(Cell_cycle_regulated_genes, Cell_cycle_regulated_genes$S.phase %in% genes_10)
+s.genes <- s.genes$S.phase
+
+g2m.genes <- subset(Cell_cycle_regulated_genes, Cell_cycle_regulated_genes$G2.M.phase %in% genes_10)
+g2m.genes <- g2m.genes$G2.M.phase
+
+early.g1.genes <- subset(Cell_cycle_regulated_genes, Cell_cycle_regulated_genes$Early.G1 %in% genes_10)
+early.g1.genes <- early.g1.genes$Early.G1
+
+late.g1.genes <- subset(Cell_cycle_regulated_genes, Cell_cycle_regulated_genes$Late.G1 %in% genes_10)
+late.g1.genes <- late.g1.genes$Late.G1
+
+```
+
+```{r}
+# Calculate an expression score for each phase and save it to the seurat object
+tryp <- MetaFeature(tryp, features = s.genes, meta.name = "S.aggregate")
+tryp <- MetaFeature(tryp, features = g2m.genes, meta.name = "G2M.aggregate")
+tryp <- MetaFeature(tryp, features = early.g1.genes, meta.name = "Early.G1.aggregate")
+tryp <- MetaFeature(tryp, features = late.g1.genes, meta.name = "Late.G1.aggregate")
+
+# Creat and dataframe with the expression score of each cell and each phase
+df <- data.frame(tryp@meta.data[["S.aggregate"]], tryp@meta.data[["G2M.aggregate"]], tryp@meta.data[["Early.G1.aggregate"]], tryp@meta.data[["Late.G1.aggregate"]])
+colnames(df) <- c("S", "G2M", "Early G1", "Late G1")
+rownames(df) <- tryp@assays[["RNA"]]@data@Dimnames[[2]]
+# Find ratio between the score and average
+df$S.ratio <- df$S / mean(df$S)
+df$G2M.ratio <- df$G2M / mean(df$G2M)
+df$Early_G1.ratio <- df$`Early G1` / mean(df$`Early G1`)
+df$Late_G1.ratio <- df$`Late G1` / mean(df$`Late G1`)
+
+# Find the top scoring phase of each cell, with FC > 1.5. 
+assignments <- apply(
+  X = df[, 5:8],
+  MARGIN = 1,
+  FUN = function(scores, first = 'S', second = 'G2M', third = "Early G1", fourth = "Late G1", null = 'Non-cycling') {
+    if (all(scores < 1.5)) {
+      return(null)
+    } else {
+      if (length(which(x = scores == max(scores))) > 1) {
+        return('Undecided')
+      } else {
+        return(c(first, second, third, fourth)[which(x = scores == max(scores))])
+      }
+    }
+  }    
+)
+
+df$Phase <- assignments
+df$Cluster <- tryp@active.ident
+
+head(df)
+
+df$Phase <- assignments
+df$Cluster <- tryp@active.ident
+
+head(df)
+
+#write.csv(df, file = "Cell_cycle_phase_scores.csv")
+
+```
+
+```{r}
+mycolours <- c("#f8766d", "#7cae00", "#01bfc4", "grey", "#c77cff")
+tryp$Phase <- as.vector(assignments)
+DimPlot(object = tryp, group.by = "Phase", reduction = "umap", pt.size = 1, cols = mycolours) + UMAP_theme
+p[[1]]$layers[[1]]$aes_params$alpha = 0.8
+p[[1]]$layers[[1]]$aes_params$shape = 16
+p
+
+#pdf(file = "cycle_WT_umap.pdf", width = 3.7, height = 2.5)
+#p
+#dev.off()
+
+```
+
+```{r}
+
+cell_proportions <- as.data.frame(prop.table(table(tryp$Phase, tryp@active.ident), margin = 2))
+write.csv(cell_proportions, file = "cell_proportions.csv")
+
+ggplot(data=cell_proportions, aes(x=cell_proportions$Var2, y=cell_proportions$Freq, fill=cell_proportions$Var1)) + geom_bar(stat="identity", color="black") + labs(x="sample", y="Proportion of Cells", fill="Cluster")
+
+
+```
+
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
